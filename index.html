@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="ms">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Senarai Iskata Live Update</title>
+<style>
+  :root{
+    --bg:#0E1A2B;
+    --ink:#E8EEF5;
+    --accent:#5FA8E0;
+    --line:#22344A;
+    --muted:#7C93AD;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Georgia', 'Times New Roman', serif;
+    background:var(--bg);
+    color:var(--ink);
+    line-height:1.6;
+  }
+  header{
+    padding:48px 24px 24px;
+    border-bottom:2px solid var(--line);
+    max-width:900px;
+    margin:0 auto;
+  }
+  h1{
+    font-size:2.4rem;
+    margin:0 0 6px;
+    font-weight:700;
+    letter-spacing:-0.01em;
+  }
+  .sub{
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    color:var(--muted);
+    font-size:0.95rem;
+    text-transform:uppercase;
+    letter-spacing:0.12em;
+  }
+  .wrap{
+    max-width:900px;
+    margin:0 auto;
+    padding:24px;
+  }
+  #search{
+    width:100%;
+    padding:12px 16px;
+    font-size:1rem;
+    font-family:'Helvetica Neue', Arial, sans-serif;
+    border:2px solid var(--line);
+    border-radius:6px;
+    margin-bottom:24px;
+    background:#16263D;
+    color:var(--ink);
+  }
+  #search:focus{
+    outline:none;
+    border-color:var(--accent);
+  }
+  .entry{
+    border-bottom:1px solid var(--line);
+    padding:18px 0;
+  }
+  .entry:last-child{border-bottom:none;}
+  .perkataan{
+    font-weight:700;
+    font-size:1.25rem;
+    color:var(--accent);
+    margin-bottom:4px;
+  }
+  .keterangan{
+    font-family:'Helvetica Neue', Arial, sans-serif;
+    font-size:0.98rem;
+    white-space:pre-line;
+    color:var(--ink);
+  }
+  .keterangan:empty::after{
+    content:"—";
+    color:var(--muted);
+  }
+  .count{
+    font-family:'Helvetica Neue', Arial, sans-serif;
+    color:var(--muted);
+    font-size:0.85rem;
+    margin-bottom:12px;
+  }
+  footer{
+    text-align:center;
+    padding:32px 24px;
+    color:var(--muted);
+    font-family:'Helvetica Neue', Arial, sans-serif;
+    font-size:0.85rem;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="sub">Kamus Bahasa Isyarat Malaysia by Cikgu Nidzam</div>
+  <h1>Senarai Iskata Live Update</h1>
+</header>
+<div class="wrap">
+  <input type="text" id="search" placeholder="Cari perkataan...">
+  <div class="count" id="count"></div>
+  <div id="list"></div>
+</div>
+<footer>Senarai iskata dan maksud — kemas kini secara berkala.</footer>
+
+<script>
+const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSlEnkK6gnMKu4wvAzwJVKTdWgJVQt94IwTkUpMDGivpIAYfPWp5IEB8_K5qSaKfavqslc7D_v6UcyF/pub?output=csv";
+
+const list = document.getElementById('list');
+const search = document.getElementById('search');
+const count = document.getElementById('count');
+
+let data = [];
+
+// Simple CSV parser that handles quoted fields with commas/newlines
+function parseCSV(text){
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  for(let i=0; i<text.length; i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"'){
+        if(text[i+1] === '"'){ field += '"'; i++; }
+        else { inQuotes = false; }
+      } else {
+        field += c;
+      }
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ row.push(field); field=''; }
+      else if(c === '\n' || c === '\r'){
+        if(c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field='';
+        if(row.length > 1 || row[0] !== ''){ rows.push(row); }
+        row = [];
+      } else {
+        field += c;
+      }
+    }
+  }
+  if(field !== '' || row.length){ row.push(field); rows.push(row); }
+  return rows;
+}
+
+function render(items){
+  if(items.length === 0){
+    list.innerHTML = '<p style="font-family:Helvetica,Arial,sans-serif;color:var(--muted);">Tiada hasil dijumpai.</p>';
+    count.textContent = '0 iskata';
+    return;
+  }
+  list.innerHTML = items.map(item => `
+    <div class="entry">
+      <div class="perkataan">${item.perkataan.replace(/</g,'&lt;')}</div>
+      <div class="keterangan">${item.keterangan.replace(/</g,'&lt;')}</div>
+    </div>
+  `).join('');
+  count.textContent = items.length + ' iskata';
+}
+
+search.addEventListener('input', () => {
+  const q = search.value.toLowerCase().trim();
+  const filtered = data.filter(d =>
+    d.perkataan.toLowerCase().includes(q) || d.keterangan.toLowerCase().includes(q)
+  );
+  render(filtered);
+});
+
+async function loadData(){
+  count.textContent = 'Memuatkan...';
+  try{
+    const res = await fetch(CSV_URL, {cache: "no-store"});
+    const text = await res.text();
+    const rows = parseCSV(text);
+    data = rows.slice(1)
+      .filter(r => r[0] && r[0].trim() !== '')
+      .map(r => ({ perkataan: (r[0]||'').trim(), keterangan: (r[1]||'').trim() }));
+    render(data);
+  } catch(err){
+    list.innerHTML = '<p style="font-family:Helvetica,Arial,sans-serif;color:var(--accent);">Gagal memuatkan data. Sila cuba lagi.</p>';
+    count.textContent = '';
+  }
+}
+
+loadData();
+</script>
+</body>
+</html>
